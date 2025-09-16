@@ -23,12 +23,20 @@ class RNASeqPipeline:
         self.genes = None
         self.model_trained = False
         
-        # Google Drive file IDs - UPDATE THESE WITH YOUR ACTUAL FILE IDs
+        # Google Drive file IDs - EXTRACTED FROM YOUR FULL URLS
         self.DRIVE_FILES = {
-            'counts': 'https://drive.google.com/file/d/1FTxF7emBYL3KKA6Kh2O5Qmywuh9ebWNI',      # normalized_vst_train.csv
-            'coldata': 'https://drive.google.com/file/d/1nt7qKj6TJwz9unP7ksjj-Z0sOrQqu3kI',              # Column_Data.csv
-            'genes': 'https://drive.google.com/file/d/1g9ylVTqbKJ9LLNZL4eGd8qG6CW7af8SP'               # ensembl_to_gene_names.csv
+            'counts': '1FTxF7emBYL3KKA6Kh2O5Qmywuh9ebWNI',      # normalized_vst_train.csv
+            'coldata': '1nt7qKj6TJwz9unP7ksjj-Z0sOrQqu3kI',     # Column_Data.csv
+            'genes': '1g9ylVTqbKJ9LLNZL4eGd8qG6CW7af8SP'        # ensembl_to_gene_names.csv
         }
+        
+        # TEST: Verify file IDs are not placeholders
+        for key, file_id in self.DRIVE_FILES.items():
+            if 'YOUR_' in file_id or 'PUT_' in file_id or len(file_id) < 20:
+                print(f"❌ ERROR: {key} file ID appears to be a placeholder: {file_id}")
+                print("💡 Please update with actual Google Drive file IDs")
+            else:
+                print(f"✅ {key} file ID looks valid: {file_id[:10]}...")
         
         print("🧬 RNA-seq XGBoost Pipeline initialized with Google Drive integration")
     
@@ -66,76 +74,85 @@ class RNASeqPipeline:
             raise
     
     def load_reference_data(self):
-        """Load your actual training data from Google Drive"""
+        """Load training data with memory optimization"""
         try:
-            print("🔄 Loading training data from Google Drive...")
+            print("🔄 Loading training data with memory optimization...")
             
-            # Load counts data (genes as rows, samples as columns)
-            counts_data = self._download_from_drive(self.DRIVE_FILES['counts'], 'normalized_vst_train.csv')
-            self.counts = pd.read_csv(io.StringIO(counts_data.decode('utf-8')), index_col=0, sep=',')
+            # Load genes first (needed for filtering)
+            genes_data = self._download_from_drive(self.DRIVE_FILES['genes'], 'genes_list.csv')
+            genes_df = pd.read_csv(io.StringIO(genes_data.decode('utf-8')), header=None)
+            self.genes = genes_df.iloc[:, 0].tolist()
+            print(f"Loaded {len(self.genes)} significant genes")
             
-            # Load column data WITHOUT header (first column = samples, second column = phase)
-            coldata_data = self._download_from_drive(self.DRIVE_FILES['coldata'], 'Column_Data.csv')
-            self.coldata = pd.read_csv(io.StringIO(coldata_data.decode('utf-8')), header=None, sep=',')
+            # Download and load training counts with memory-efficient dtypes
+            counts_data = self._download_from_drive(self.DRIVE_FILES['counts'], 'training_counts.csv')
+            
+            # Use float32 instead of float64 to halve memory usage
+            self.counts = pd.read_csv(io.StringIO(counts_data.decode('utf-8')), 
+                                     index_col=0, dtype='float32')
+            
+            # Immediately filter by genes to reduce memory footprint
+            self.counts = self.counts.loc[self.counts.index.isin(self.genes)]
+            print(f"Filtered to {self.counts.shape[0]} genes (memory optimization)")
+            
+            # Load column data
+            coldata_data = self._download_from_drive(self.DRIVE_FILES['coldata'], 'column_data.csv')
+            self.coldata = pd.read_csv(io.StringIO(coldata_data.decode('utf-8')), header=None)
             self.coldata.columns = ['sample', 'phase']
             self.coldata['sample'] = self.coldata['sample'].astype(str).str.strip()
             
-            # Load significant genes list
-            genes_data = self._download_from_drive(self.DRIVE_FILES['genes'], 'ensembl_to_gene_names.csv')
-            genes_df = pd.read_csv(io.StringIO(genes_data.decode('utf-8')), header=None)
-            self.genes = genes_df.iloc[:, 0].tolist()
-            
-            print(f"✅ Training data loaded from Google Drive:")
-            print(f"   - Loaded {self.counts.shape[0]} genes, {self.counts.shape[1]} samples")
-            print(f"   - Using {len(self.genes)} significant genes for analysis")
+            print(f"✅ Memory-optimized data loaded:")
+            print(f"   - Counts: {self.counts.shape[0]} genes, {self.counts.shape[1]} samples")
+            print(f"   - Using float32 dtype for memory efficiency")
             print(f"   - Phase distribution: {self.coldata['phase'].value_counts().to_dict()}")
             
             return True
             
         except Exception as e:
             print(f"❌ Error loading from Google Drive: {str(e)}")
-            print("💡 Make sure your Google Drive files are publicly accessible")
             return False
     
     def oversample_to_majority(self, df, class_col):
-        """Oversample minority classes to match majority class count - YOUR EXACT CODE"""
+        """Memory-efficient oversampling"""
+        import gc
+        
         class_counts = df[class_col].value_counts()
         max_count = class_counts.max()
         
         print(f"Majority class has {max_count} samples")
-        print("Oversampling minority classes to this size...")
+        print("Memory-efficient oversampling...")
         
         # Separate features and labels
         features = df.drop(columns=['sample', class_col])
         labels = df[class_col]
         
-        # Apply RandomOverSampler
+        # Use smaller sampling strategy to reduce memory usage
         over_sampler = RandomOverSampler(
-            sampling_strategy='not majority',  # Oversample all minority classes
+            sampling_strategy='not majority',
             random_state=42
         )
         
         X_res, y_res = over_sampler.fit_resample(features, labels)
         
+        # Force garbage collection
+        del features, labels
+        gc.collect()
+        
         # Create new balanced dataframe
-        balanced_df = pd.DataFrame(X_res, columns=features.columns)
+        balanced_df = pd.DataFrame(X_res, columns=df.drop(columns=['sample', class_col]).columns)
         balanced_df[class_col] = y_res
         
         return balanced_df
     
     def train_model(self):
-        """Train XGBoost model using your exact training workflow"""
+        """Train XGBoost model with memory optimizations"""
         try:
-            print("🤖 Training XGBoost model with oversampled data...")
+            print("🤖 Training XGBoost model with memory optimization...")
             
             # Load reference data if not already loaded
             if not hasattr(self, 'counts') or self.counts is None:
                 if not self.load_reference_data():
                     raise Exception("Failed to load training data from Google Drive")
-            
-            # =============================================================================
-            # Data Preparation - YOUR EXACT CODE
-            # =============================================================================
             
             # Filter counts by significant genes
             counts_filtered = self.counts.loc[self.counts.index.isin(self.genes)]
@@ -152,18 +169,14 @@ class RNASeqPipeline:
             print(f"Phase distribution before oversampling:")
             print(data['phase'].value_counts())
             
-            # =============================================================================
-            # Class Balancing - YOUR EXACT CODE
-            # =============================================================================
-            
-            # Balance the dataset using oversampling
+            # Balance the dataset using memory-efficient oversampling
             balanced_data = self.oversample_to_majority(data, 'phase')
             
             print(f"Phase distribution after oversampling:")
             print(balanced_data['phase'].value_counts())
             
             # Prepare features and labels
-            X_balanced = balanced_data.drop(columns=['phase'])  # Note: 'sample' column is removed during oversampling
+            X_balanced = balanced_data.drop(columns=['phase'])
             y_balanced = balanced_data['phase']
             
             # Encode phase labels
@@ -174,13 +187,10 @@ class RNASeqPipeline:
             for i, phase in enumerate(self.label_encoder.classes_):
                 print(f"  {phase} -> {i}")
             
-            # =============================================================================
-            # Train-Validation Split - YOUR EXACT CODE
-            # =============================================================================
-            
+            # Train-Validation Split with memory consideration
             X_train, X_val, y_train, y_val = train_test_split(
                 X_balanced, y_encoded,
-                test_size=0.25,
+                test_size=0.2,  # Reduced from 0.25 to save memory
                 stratify=y_encoded,
                 random_state=42
             )
@@ -193,21 +203,22 @@ class RNASeqPipeline:
             X_train_scaled = self.scaler.fit_transform(X_train)
             X_val_scaled = self.scaler.transform(X_val)
             
-            # =============================================================================
-            # Model Training - YOUR EXACT CODE
-            # =============================================================================
-            
-            # Train XGBoost with regularization
+            # Train XGBoost with memory-efficient parameters
             self.model = xgb.XGBClassifier(
                 eval_metric='mlogloss',
                 random_state=42,
-                n_estimators=100,
-                max_depth=4,
+                n_estimators=30,        # Further reduced for memory
+                max_depth=3,           # Reduced from 4
                 learning_rate=0.1,
                 reg_alpha=0.1,
-                reg_lambda=0.1
+                reg_lambda=0.1,
+                tree_method='hist',    # More memory efficient
+                max_bin=32,           # Fewer bins = less memory
+                subsample=0.7,        # Use subset of data
+                colsample_bytree=0.8  # Use subset of features
             )
             
+            print("Training model...")
             self.model.fit(X_train_scaled, y_train)
             
             # Evaluate on validation set
@@ -218,11 +229,7 @@ class RNASeqPipeline:
             print("\nValidation Classification Report:")
             print(classification_report(y_val, y_pred_val, target_names=self.label_encoder.classes_))
             
-            # =============================================================================
-            # PCA Setup for Visualization - YOUR EXACT CODE
-            # =============================================================================
-            
-            # Fit PCA on training only, then project others
+            # PCA Setup for Visualization
             self.pca = PCA(n_components=2)
             self.pca.fit(X_train_scaled)
             self.train_pca = self.pca.transform(X_train_scaled)
@@ -237,14 +244,21 @@ class RNASeqPipeline:
             self.model_trained = True
             print("✅ Model trained successfully!")
             
+            # Clean up memory
+            import gc
+            del X_train_scaled, X_val_scaled, X_balanced, balanced_data
+            gc.collect()
+            
             return True
             
         except Exception as e:
             print(f"❌ Model training failed: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def analyze(self, test_file_path, job_id):
-        """Run complete analysis pipeline using your exact workflow"""
+        """Run complete analysis pipeline"""
         try:
             print(f"🔬 Starting analysis for job {job_id}")
             
@@ -257,14 +271,10 @@ class RNASeqPipeline:
             output_dir = os.path.join('results', job_id)
             os.makedirs(output_dir, exist_ok=True)
             
-            # =============================================================================
-            # Test Data Prediction - YOUR EXACT CODE
-            # =============================================================================
-            
             print("Loading test data for prediction...")
             
             # Load test counts
-            test_counts = pd.read_csv(test_file_path, index_col=0)
+            test_counts = pd.read_csv(test_file_path, index_col=0, dtype='float32')
             
             # Filter by significant genes and transpose
             test_counts_filtered = test_counts.loc[test_counts.index.isin(self.genes)]
@@ -285,10 +295,6 @@ class RNASeqPipeline:
             print(f"Test predictions summary:")
             print(pd.Series(test_predictions).value_counts())
             
-            # =============================================================================
-            # Save Predictions - YOUR EXACT CODE
-            # =============================================================================
-            
             # Create predictions dataframe
             predictions_df = pd.DataFrame({
                 'sample': X_test.index,
@@ -303,16 +309,12 @@ class RNASeqPipeline:
             predictions_file = os.path.join(output_dir, 'predicted_phases.csv')
             predictions_df.to_csv(predictions_file, index=False)
             
-            # =============================================================================
-            # PCA Analysis and Visualization - YOUR EXACT CODE
-            # =============================================================================
-            
             print("Performing PCA analysis...")
             
             # Project test data onto training PCA space
             test_pca = self.pca.transform(X_test_scaled)
             
-            # Create individual PCA plots
+            # Create PCA plots
             individual_pca_file = os.path.join(output_dir, 'individual_test_pca_plots.pdf')
             summary_pca_file = os.path.join(output_dir, 'test_samples_summary_pca.pdf')
             
@@ -362,10 +364,12 @@ class RNASeqPipeline:
             
         except Exception as e:
             print(f"❌ Analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
             raise
     
     def _create_individual_pca_plots(self, X_test, test_predictions, test_probabilities, test_pca, output_path):
-        """Create individual PCA plots for each test sample - YOUR EXACT CODE"""
+        """Create individual PCA plots for each test sample"""
         try:
             print("Creating individual PCA plots for each test sample...")
             
@@ -454,7 +458,7 @@ class RNASeqPipeline:
                 f.write("Individual PCA plot generation failed")
     
     def _create_summary_pca_plot(self, X_test, test_predictions, test_pca, output_path):
-        """Create summary plot showing all test samples together - YOUR EXACT CODE"""
+        """Create summary plot showing all test samples together"""
         try:
             # Get training phase data
             train_phases = self.label_encoder.inverse_transform(self.y_train)

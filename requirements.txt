@@ -11,3 +11,4 @@ gunicorn==21.2.0
 Werkzeug==3.0.1
 setuptools==69.0.3
 wheel==0.42.0
+requests==2.31.0

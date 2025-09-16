@@ -25,9 +25,9 @@ class RNASeqPipeline:
         
         # Google Drive file IDs - UPDATE THESE WITH YOUR ACTUAL FILE IDs
         self.DRIVE_FILES = {
-            'counts': 'YOUR_NORMALIZED_VST_TRAIN_FILE_ID',      # normalized_vst_train.csv
-            'coldata': 'YOUR_COLUMN_DATA_FILE_ID',              # Column_Data.csv
-            'genes': 'YOUR_ENSEMBL_GENES_FILE_ID'               # ensembl_to_gene_names.csv
+            'counts': 'https://drive.google.com/file/d/1FTxF7emBYL3KKA6Kh2O5Qmywuh9ebWNI/view?usp=drive_link',      # normalized_vst_train.csv
+            'coldata': 'https://drive.google.com/file/d/1nt7qKj6TJwz9unP7ksjj-Z0sOrQqu3kI/view?usp=drive_link',              # Column_Data.csv
+            'genes': 'https://drive.google.com/file/d/1g9ylVTqbKJ9LLNZL4eGd8qG6CW7af8SP/view?usp=drive_link'               # ensembl_to_gene_names.csv
         }
         
         print("🧬 RNA-seq XGBoost Pipeline initialized with Google Drive integration")

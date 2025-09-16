@@ -41,37 +41,71 @@ class RNASeqPipeline:
         print("🧬 RNA-seq XGBoost Pipeline initialized with Google Drive integration")
     
     def _download_from_drive(self, file_id, filename):
-        """Download file from Google Drive with large file support"""
-        try:
-            download_url = f"https://drive.google.com/uc?id={file_id}&export=download"
+    """Download file from Google Drive with proper large file handling"""
+    try:
+        download_url = f"https://drive.google.com/uc?id={file_id}&export=download"
+        
+        print(f"📥 Downloading {filename} from Google Drive...")
+        
+        session = requests.Session()
+        
+        # Initial request
+        response = session.get(download_url, stream=True)
+        
+        # Check if we got the virus scan warning page
+        if response.status_code == 200:
+            content = response.content
             
-            print(f"📥 Downloading {filename} from Google Drive...")
-            
-            session = requests.Session()
-            response = session.get(download_url, stream=True)
-            
-            # Handle Google Drive virus scan warning for large files (>25MB)
-            if response.status_code == 200:
-                if 'virus scan warning' in response.text.lower() or len(response.content) < 1000:
-                    # Extract confirmation token
-                    import re
-                    token_match = re.search(r'confirm=([^&]+)', response.text)
-                    token = token_match.group(1) if token_match else 't'
-                    
-                    # Download with confirmation
-                    confirm_url = f"https://drive.google.com/uc?export=download&confirm={token}&id={file_id}"
-                    response = session.get(confirm_url, stream=True)
-            
-            if response.status_code == 200:
-                file_size = len(response.content) / (1024 * 1024)
-                print(f"✅ Downloaded {filename} ({file_size:.1f} MB)")
-                return response.content
-            else:
-                raise Exception(f"HTTP {response.status_code}")
+            # If content is too small or contains HTML, it's likely the virus scan page
+            if len(content) < 10000 or b'<!DOCTYPE html>' in content[:1000]:
+                print(f"⚠️ Got virus scan warning for {filename}, extracting confirmation token...")
                 
-        except Exception as e:
-            print(f"❌ Error downloading {filename}: {str(e)}")
-            raise
+                # Parse the HTML to find the confirmation link
+                content_str = content.decode('utf-8', errors='ignore')
+                
+                # Look for the confirmation token in various places
+                import re
+                
+                # Method 1: Look for confirm parameter in URL
+                confirm_match = re.search(r'[?&]confirm=([^&]+)', content_str)
+                if confirm_match:
+                    token = confirm_match.group(1)
+                else:
+                    # Method 2: Look for download anyway link
+                    download_anyway_match = re.search(r'/uc\?export=download&amp;confirm=([^&]+)&amp;id=' + file_id, content_str)
+                    if download_anyway_match:
+                        token = download_anyway_match.group(1)
+                    else:
+                        # Method 3: Generic confirmation token pattern
+                        token_match = re.search(r'confirm=([a-zA-Z0-9_-]+)', content_str)
+                        token = token_match.group(1) if token_match else 't'
+                
+                print(f"🔑 Using confirmation token: {token}")
+                
+                # Download with confirmation
+                confirm_url = f"https://drive.google.com/uc?export=download&confirm={token}&id={file_id}"
+                response = session.get(confirm_url, stream=True)
+                
+                if response.status_code == 200:
+                    content = response.content
+                else:
+                    raise Exception(f"Confirmation download failed: HTTP {response.status_code}")
+            
+            file_size = len(content) / (1024 * 1024)
+            print(f"✅ Downloaded {filename} ({file_size:.1f} MB)")
+            
+            # Verify we got actual CSV content, not HTML
+            if file_size < 0.1 and (b'<!DOCTYPE html>' in content[:1000] or b'<html' in content[:1000]):
+                raise Exception(f"Downloaded HTML instead of CSV for {filename}")
+            
+            return content
+        else:
+            raise Exception(f"HTTP {response.status_code}")
+                
+    except Exception as e:
+        print(f"❌ Error downloading {filename}: {str(e)}")
+        raise
+
     
     def load_reference_data(self):
         """Load training data with memory optimization"""

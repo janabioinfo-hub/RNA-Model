@@ -1,52 +1,243 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>RNA-seq XGBoost Classification Pipeline</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family:Arial,sans-serif; margin:2em; line-height:1.6; color:#222; }
-    h1, h2 { color:#073763; }
-    .result-links a { display:block; margin:0.5em 0; color:#007bff; text-decoration:none;}
-    .result-links a:hover { text-decoration:underline; }
-    .highlight { background:#d9ead3; padding:0.1em 0.3em; border-radius:0.2em;}
-    footer {margin-top:2em; font-size:0.9em;}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RNA-seq XGBoost Analysis Pipeline</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .upload-zone { 
+            border: 3px dashed #007bff; padding: 40px; text-align: center; 
+            background: #f8f9fa; border-radius: 10px; margin: 20px 0;
+            transition: background-color 0.3s ease;
+        }
+        .upload-zone.dragover { background: #e3f2fd; border-color: #1976d2; }
+        .job-status { margin: 20px 0; padding: 15px; border-radius: 5px; }
+        .status-processing { background: #fff3cd; border: 1px solid #ffeaa7; }
+        .status-complete { background: #d4edda; border: 1px solid #c3e6cb; }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
+        .result-card { background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .download-btn { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .download-btn:hover { background: #0056b3; }
+        #fileInput { display: none; }
+        .job-history { margin-top: 30px; }
+        .job-item { padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    </style>
 </head>
 <body>
-  <header>
-    <h1>RNA-seq XGBoost Classification</h1>
-    <p class="highlight">Machine learning pipeline for endometrial tissue phase prediction from RNA-seq data</p>
-  </header>
-  <nav>
-    <a href="https://colab.research.google.com/drive/1DwI1ubTjg4PlhZTWVj9sfgXFozTf-ztX" target="_blank">Launch Colab Notebook</a>
-    <a href="https://github.com/janabioinfo-hub/RNA-Model" target="_blank">GitHub Repository</a>
-  </nav>
-  <main>
-    <h2>Features</h2>
-    <ul>
-      <li>Upload and analyze new test RNA-seq data via drag-and-drop in Colab.</li>
-      <li>Results saved to Google Drive under unique job folders for reproducibility.</li>
-      <li>PCA plots and predictions downloadable for each analysis job.</li>
-      <li>Cloud-friendly setup, all code versioned on GitHub.</li>
-    </ul>
-    <h2>How to Use</h2>
-    <ol>
-      <li>Open the Colab notebook (see link above).</li>
-      <li>Run all cells, and drag & drop a CSV file when prompted.</li>
-      <li>After analysis, download output files using the provided links.</li>
-      <li>Review your job's results in your Drive under <code>/MyDrive/RNA_Seq_Jobs</code>.</li>
-    </ol>
+    <header>
+        <h1>🧬 RNA-seq XGBoost Classification Pipeline</h1>
+        <p>Upload your test CSV file to predict endometrial phases using machine learning</p>
+    </header>
 
-    <section class="result-links">
-      <h2>Latest Results</h2>
-      <a href="[LINK_TO_LATEST_PREDICTIONS_CSV]" target="_blank">Predicted Phases CSV</a>
-      <a href="[LINK_TO_LATEST_PCA_SUMMARY_PDF]" target="_blank">Summary PCA PDF</a>
-      <a href="[LINK_TO_LATEST_INDIVIDUAL_PCA_PDF]" target="_blank">Individual Test PCA Plots PDF</a>
-    </section>
-  </main>
-  <footer>
-    Created by [Your Name], adapted for GitHub Pages. Questions? <a href="mailto:[your.email@example.com]">Contact us</a>
-  </footer>
+    <main>
+        <div class="upload-zone" id="uploadZone">
+            <h3>📁 Drop your test CSV file here</h3>
+            <p>Or <button onclick="document.getElementById('fileInput').click()" style="background:none;border:none;color:#007bff;cursor:pointer;text-decoration:underline;">click to browse</button></p>
+            <input type="file" id="fileInput" accept=".csv" />
+            <div id="fileInfo" style="margin-top:15px;font-size:14px;color:#666;"></div>
+        </div>
+
+        <div id="jobStatus" class="job-status" style="display:none;">
+            <div id="statusMessage">Processing your file...</div>
+            <div id="progressBar" style="width:100%;background:#e9ecef;border-radius:5px;margin-top:10px;">
+                <div id="progress" style="width:0%;height:20px;background:#007bff;border-radius:5px;transition:width 0.3s ease;"></div>
+            </div>
+        </div>
+
+        <div id="results" class="results-grid" style="display:none;">
+            <div class="result-card">
+                <h4>📊 Prediction Results</h4>
+                <p>Phase predictions for each sample</p>
+                <a id="predictionsLink" class="download-btn" href="#" target="_blank">Download CSV</a>
+            </div>
+            <div class="result-card">
+                <h4>📈 PCA Analysis</h4>
+                <p>Individual sample PCA plots</p>
+                <a id="pcaIndividualLink" class="download-btn" href="#" target="_blank">Download PDF</a>
+            </div>
+            <div class="result-card">
+                <h4>🎯 Summary Plot</h4>
+                <p>All test samples visualization</p>
+                <a id="pcaSummaryLink" class="download-btn" href="#" target="_blank">Download PDF</a>
+            </div>
+        </div>
+
+        <div class="job-history">
+            <h3>📋 Job History</h3>
+            <div id="jobHistoryList">
+                <p style="color:#666;">No previous jobs found</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Configuration - REPLACE WITH YOUR GOOGLE APPS SCRIPT WEB APP URL
+        const WEBAPP_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+        
+        // DOM Elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const jobStatus = document.getElementById('jobStatus');
+        const results = document.getElementById('results');
+        
+        // Drag and Drop Handlers
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) handleFileSelect(files[0]);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) handleFileSelect(e.target.files[0]);
+        });
+        
+        function handleFileSelect(file) {
+            if (!file.name.endsWith('.csv')) {
+                alert('Please select a CSV file');
+                return;
+            }
+            
+            fileInfo.innerHTML = `📄 Selected: ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+            uploadFile(file);
+        }
+        
+        async function uploadFile(file) {
+            jobStatus.style.display = 'block';
+            results.style.display = 'none';
+            
+            // Convert file to base64
+            const base64 = await fileToBase64(file);
+            
+            // Prepare payload
+            const payload = {
+                action: 'uploadAndAnalyze',
+                filename: file.name,
+                fileContent: base64,
+                timestamp: new Date().toISOString()
+            };
+            
+            try {
+                updateProgress(10, 'Uploading file to Drive...');
+                
+                const response = await fetch(WEBAPP_URL, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    updateProgress(50, 'Running analysis...');
+                    pollJobStatus(result.jobId);
+                } else {
+                    throw new Error(result.error || 'Upload failed');
+                }
+            } catch (error) {
+                jobStatus.innerHTML = `<div style="color:red;">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        async function pollJobStatus(jobId) {
+            const maxAttempts = 60; // 5 minutes max
+            let attempts = 0;
+            
+            const poll = async () => {
+                try {
+                    const response = await fetch(`${WEBAPP_URL}?action=checkStatus&jobId=${jobId}`);
+                    const status = await response.json();
+                    
+                    if (status.complete) {
+                        updateProgress(100, 'Analysis complete!');
+                        displayResults(status.results);
+                        saveJobToHistory(jobId, status.results);
+                    } else if (attempts < maxAttempts) {
+                        attempts++;
+                        const progress = Math.min(50 + (attempts * 2), 95);
+                        updateProgress(progress, status.message || 'Processing...');
+                        setTimeout(poll, 5000); // Check every 5 seconds
+                    } else {
+                        throw new Error('Analysis timeout');
+                    }
+                } catch (error) {
+                    jobStatus.innerHTML = `<div style="color:red;">❌ Error: ${error.message}</div>`;
+                }
+            };
+            
+            poll();
+        }
+        
+        function updateProgress(percent, message) {
+            document.getElementById('progress').style.width = percent + '%';
+            document.getElementById('statusMessage').textContent = message;
+        }
+        
+        function displayResults(resultUrls) {
+            jobStatus.style.display = 'none';
+            results.style.display = 'grid';
+            
+            document.getElementById('predictionsLink').href = resultUrls.predictions;
+            document.getElementById('pcaIndividualLink').href = resultUrls.pcaIndividual;
+            document.getElementById('pcaSummaryLink').href = resultUrls.pcaSummary;
+        }
+        
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+            });
+        }
+        
+        function saveJobToHistory(jobId, results) {
+            const jobs = JSON.parse(localStorage.getItem('analysisJobs') || '[]');
+            jobs.unshift({
+                id: jobId,
+                timestamp: new Date().toISOString(),
+                results: results
+            });
+            localStorage.setItem('analysisJobs', JSON.stringify(jobs.slice(0, 10))); // Keep last 10
+            loadJobHistory();
+        }
+        
+        function loadJobHistory() {
+            const jobs = JSON.parse(localStorage.getItem('analysisJobs') || '[]');
+            const historyList = document.getElementById('jobHistoryList');
+            
+            if (jobs.length === 0) {
+                historyList.innerHTML = '<p style="color:#666;">No previous jobs found</p>';
+                return;
+            }
+            
+            historyList.innerHTML = jobs.map(job => `
+                <div class="job-item">
+                    <div>
+                        <strong>Job ${job.id}</strong><br>
+                        <small>${new Date(job.timestamp).toLocaleString()}</small>
+                    </div>
+                    <div>
+                        <a href="${job.results.predictions}" class="download-btn" style="margin-right:5px;">CSV</a>
+                        <a href="${job.results.pcaSummary}" class="download-btn">PDF</a>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Load job history on page load
+        window.addEventListener('load', loadJobHistory);
+    </script>
 </body>
 </html>

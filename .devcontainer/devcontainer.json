@@ -1,0 +1,32 @@
+{
+  "name": "RNA-seq XGBoost Predictor",
+  "image": "mcr.microsoft.com/vscode/devcontainers/python:0-3.9-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "forwardPorts": [5000],
+  "portsAttributes": {
+    "5000": {
+      "label": "RNA-seq Predictor App",
+      "protocol": "http",
+      "visibility": "public"
+    }
+  },
+  "postCreateCommand": "pip install -r requirements.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.flake8",
+        "ms-python.pylint",
+        "ms-toolsai.jupyter"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python3",
+        "python.linting.enabled": true,
+        "python.linting.flake8Enabled": true
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}
